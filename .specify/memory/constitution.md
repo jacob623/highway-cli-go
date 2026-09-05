@@ -1,19 +1,12 @@
 <!--
 Sync Impact Report
-- Version change: (unratified template) → 1.0.0
-- Rationale: Initial ratification. The prior file contained only unfilled
-  template placeholders and had never been adopted, so this is treated as a
-  first adoption (MAJOR).
-- Modified principles: n/a (first real content)
-- Added sections:
-  - I. Code Quality
-  - II. Simplicity
-  - III. Testing Standards (NON-NEGOTIABLE)
-  - IV. User Experience Consistency
-  - V. Performance Requirements
-  - Technology & Dependency Constraints
-  - Development Workflow & Quality Gates
-  - Governance
+- Version change: 1.0.0 → 1.1.0
+- Rationale: Materially expanded guidance added to Technology & Dependency
+  Constraints, making the existing "actively maintained" requirement an
+  explicit, checkable pre-proposal gate (MINOR).
+- Modified principles: n/a
+- Added sections: none (existing Technology & Dependency Constraints section
+  gained one new bullet)
 - Removed sections: none
 - Templates checked for alignment:
   - .specify/templates/plan-template.md — Constitution Check gate references
@@ -138,6 +131,11 @@ exists to support.
   maintained, and justified in the introducing change's plan (Complexity
   Tracking); prefer one well-established library over multiple overlapping
   ones for the same concern.
+- Before proposing any new third-party library, the proposer MUST check that
+  library's public commit history and confirm its most recent commit is
+  dated no more than 1 month before the proposal date. A library that does
+  not meet this bar MUST NOT be proposed unless the plan's Complexity
+  Tracking section documents an explicit justification for the exception.
 - The tool MUST NOT transmit telemetry, usage data, or configuration content
   over the network without explicit, documented user opt-in.
 
@@ -175,4 +173,4 @@ Each amendment PR MUST update the version and `Last Amended` date below and
 MUST include a Sync Impact Report (as an HTML comment at the top of this
 file) summarizing what changed.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-05 | **Last Amended**: 2026-09-05
+**Version**: 1.1.0 | **Ratified**: 2026-09-05 | **Last Amended**: 2026-09-05

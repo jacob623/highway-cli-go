@@ -1,16 +1,19 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
 	"github.com/jacob623/highway-cli-go/internal/agentcatalog"
+	"github.com/jacob623/highway-cli-go/internal/reposync"
 )
 
 // loadCatalog is overridable in tests to avoid depending on the embedded catalog file.
@@ -38,20 +41,36 @@ var selectAgent = func(options []huh.Option[string]) (string, error) {
 	return selectedID, nil
 }
 
+// syncRepo is overridable in tests; clones the configured repository/ref and
+// writes its files to destination.
+var syncRepo = reposync.Sync
+
+// getwd is overridable in tests; reports the current working directory.
+var getwd = os.Getwd
+
 func newInitCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "init",
+		Use:   "init [path]",
 		Short: "Select the AI coding agent to use",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInit(cmd.OutOrStdout(), cmd.ErrOrStderr())
+			var path string
+			if len(args) == 1 {
+				path = args[0]
+			}
+			ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt)
+			defer cancel()
+			return runInit(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), path)
 		},
 	}
 }
 
 // runInit implements the `init` command contract: load the catalog, verify an
-// interactive terminal is available, prompt for a selection, and confirm it.
-// The selection is never persisted (FR-011).
-func runInit(stdout, stderr io.Writer) error {
+// interactive terminal is available, prompt for a selection, then clone the
+// configured git repository/commit and write its files to the destination
+// (path if supplied, otherwise the current working directory). The agent
+// selection itself is never persisted (FR-011 covers the destination path).
+func runInit(ctx context.Context, stdout, stderr io.Writer, path string) error {
 	catalog, err := loadCatalog()
 	if err != nil {
 		fmt.Fprintf(stderr, "Error: %v\n", err)
@@ -84,5 +103,24 @@ func runInit(stdout, stderr io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, "Selected agent: %s\n", displayName)
+
+	destination := path
+	if destination == "" {
+		destination, err = getwd()
+		if err != nil {
+			fmt.Fprintf(stderr, "Error: %v\n", err)
+			return err
+		}
+	}
+
+	if err := syncRepo(ctx, catalog.Git.Repository, catalog.Git.Ref, destination); err != nil {
+		if errors.Is(err, context.Canceled) {
+			err = fmt.Errorf("cancelled before files were written: %w", err)
+		}
+		fmt.Fprintf(stderr, "Error: %v\n", err)
+		return err
+	}
+
+	fmt.Fprintf(stdout, "Files written to: %s\n", destination)
 	return nil
 }

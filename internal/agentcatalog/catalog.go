@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-//go:embed agents.yaml
+//go:embed config.yaml
 var embeddedFS embed.FS
 
 // AgentDefinition represents one supported AI coding agent listed in the catalog.
@@ -19,9 +19,17 @@ type AgentDefinition struct {
 	DisplayName string `yaml:"display_name"`
 }
 
-// AgentCatalog is the full set of agent definitions loaded from the catalog file.
+// GitConfig is the single, tool-wide git repository and commit retrieved after
+// agent selection, independent of any specific AgentDefinition.
+type GitConfig struct {
+	Repository string `yaml:"repository"`
+	Ref        string `yaml:"ref"`
+}
+
+// AgentCatalog is the full set of agent definitions and git configuration loaded from the catalog file.
 type AgentCatalog struct {
 	Agents []AgentDefinition `yaml:"agents"`
+	Git    GitConfig         `yaml:"git"`
 }
 
 // ErrCatalogNotFound indicates the catalog file could not be found (FR-006).
@@ -30,9 +38,12 @@ var ErrCatalogNotFound = errors.New("agent catalog configuration not found")
 // ErrCatalogEmpty indicates the catalog has no valid supported agents (FR-008).
 var ErrCatalogEmpty = errors.New("agent catalog configuration has no supported agents")
 
+// ErrGitConfigMissing indicates no git repository/commit is configured (FR-006).
+var ErrGitConfigMissing = errors.New("agent catalog configuration has no git repository configured")
+
 // Load reads and validates the agent catalog embedded in the binary.
 func Load() (*AgentCatalog, error) {
-	return LoadFS(embeddedFS, "agents.yaml")
+	return LoadFS(embeddedFS, "config.yaml")
 }
 
 // LoadFS reads and validates an agent catalog at name within fsys, allowing
@@ -51,6 +62,10 @@ func LoadFS(fsys fs.FS, name string) (*AgentCatalog, error) {
 	catalog.Agents = dedupeAndValidate(catalog.Agents)
 	if len(catalog.Agents) == 0 {
 		return nil, ErrCatalogEmpty
+	}
+
+	if catalog.Git.Repository == "" || catalog.Git.Ref == "" {
+		return nil, ErrGitConfigMissing
 	}
 
 	return &catalog, nil
