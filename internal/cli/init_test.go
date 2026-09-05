@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -18,7 +19,7 @@ func withInitStubs(
 	load func() (*agentcatalog.AgentCatalog, error),
 	terminal func(*os.File) bool,
 	sel func([]huh.Option[string]) (string, error),
-	sync func(context.Context, string, string, string) error,
+	sync func(context.Context, string, string, string, []string, []string, []string) error,
 	wd func() (string, error),
 ) {
 	t.Helper()
@@ -52,7 +53,9 @@ func fakeCatalog(agents ...agentcatalog.AgentDefinition) func() (*agentcatalog.A
 	}
 }
 
-func noopSync(context.Context, string, string, string) error { return nil }
+func noopSync(context.Context, string, string, string, []string, []string, []string) error {
+	return nil
+}
 
 func fakeGetwd(path string) func() (string, error) {
 	return func() (string, error) { return path, nil }
@@ -114,7 +117,7 @@ func TestRunInit_ExplicitDestinationPath(t *testing.T) {
 		fakeCatalog(agentcatalog.AgentDefinition{ID: "vscode", DisplayName: "GitHub Copilot"}),
 		func(*os.File) bool { return true },
 		func([]huh.Option[string]) (string, error) { return "vscode", nil },
-		func(_ context.Context, _, _, destination string) error {
+		func(_ context.Context, _, _, destination string, _, _, _ []string) error {
 			gotDestination = destination
 			return nil
 		},
@@ -135,6 +138,66 @@ func TestRunInit_ExplicitDestinationPath(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "/tmp/explicit-dest") {
 		t.Errorf("runInit() stdout = %q, want confirmation naming the explicit destination", stdout.String())
+	}
+}
+
+func TestRunInit_PassesSelectedAgentFilesAndFolders(t *testing.T) {
+	var gotFiles, gotFolders []string
+	withInitStubs(t,
+		fakeCatalog(
+			agentcatalog.AgentDefinition{
+				ID:          "vscode",
+				DisplayName: "GitHub Copilot",
+				Files:       []string{"file1.md", "file2.md"},
+				Folders:     []string{".github/skills", ".idea/library"},
+			},
+			agentcatalog.AgentDefinition{ID: "cursor", DisplayName: "Cursor"},
+		),
+		func(*os.File) bool { return true },
+		func([]huh.Option[string]) (string, error) { return "vscode", nil },
+		func(_ context.Context, _, _, _ string, files, folders, _ []string) error {
+			gotFiles = files
+			gotFolders = folders
+			return nil
+		},
+		fakeGetwd("/tmp/current-dir"),
+	)
+
+	var stdout, stderr bytes.Buffer
+	if err := runInit(context.Background(), &stdout, &stderr, ""); err != nil {
+		t.Fatalf("runInit() unexpected error: %v", err)
+	}
+
+	wantFiles := []string{"file1.md", "file2.md"}
+	wantFolders := []string{".github/skills", ".idea/library"}
+	if !slices.Equal(gotFiles, wantFiles) {
+		t.Errorf("runInit() passed files = %v, want %v", gotFiles, wantFiles)
+	}
+	if !slices.Equal(gotFolders, wantFolders) {
+		t.Errorf("runInit() passed folders = %v, want %v", gotFolders, wantFolders)
+	}
+}
+
+func TestRunInit_NoDeclaredListsStillSucceeds(t *testing.T) {
+	withInitStubs(t,
+		fakeCatalog(agentcatalog.AgentDefinition{ID: "vscode", DisplayName: "GitHub Copilot"}),
+		func(*os.File) bool { return true },
+		func([]huh.Option[string]) (string, error) { return "vscode", nil },
+		noopSync,
+		fakeGetwd("/tmp/current-dir"),
+	)
+
+	var stdout, stderr bytes.Buffer
+	err := runInit(context.Background(), &stdout, &stderr, "")
+
+	if err != nil {
+		t.Fatalf("runInit() unexpected error: %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("runInit() stderr = %q, want empty on success", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "/tmp/current-dir") {
+		t.Errorf("runInit() stdout = %q, want confirmation naming the destination even though nothing was written", stdout.String())
 	}
 }
 
@@ -162,7 +225,9 @@ func TestRunInit_SyncCancellation(t *testing.T) {
 		fakeCatalog(agentcatalog.AgentDefinition{ID: "vscode", DisplayName: "GitHub Copilot"}),
 		func(*os.File) bool { return true },
 		func([]huh.Option[string]) (string, error) { return "vscode", nil },
-		func(context.Context, string, string, string) error { return context.Canceled },
+		func(context.Context, string, string, string, []string, []string, []string) error {
+			return context.Canceled
+		},
 		fakeGetwd("/tmp/current-dir"),
 	)
 
@@ -177,6 +242,9 @@ func TestRunInit_SyncCancellation(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "cancel") {
 		t.Errorf("runInit() stderr = %q, want a message mentioning cancellation", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Re-run the command") {
+		t.Errorf("runInit() stderr = %q, want it to instruct the user to re-run the command", stderr.String())
 	}
 }
 
@@ -236,7 +304,7 @@ func TestRunInit_SyncError(t *testing.T) {
 		fakeCatalog(agentcatalog.AgentDefinition{ID: "vscode", DisplayName: "GitHub Copilot"}),
 		func(*os.File) bool { return true },
 		func([]huh.Option[string]) (string, error) { return "vscode", nil },
-		func(context.Context, string, string, string) error { return syncErr },
+		func(context.Context, string, string, string, []string, []string, []string) error { return syncErr },
 		fakeGetwd("/tmp/current-dir"),
 	)
 
@@ -251,5 +319,151 @@ func TestRunInit_SyncError(t *testing.T) {
 	}
 	if stderr.Len() == 0 {
 		t.Error("runInit() stderr is empty, want an actionable error message")
+	}
+	if !strings.Contains(stderr.String(), "Re-run the command") {
+		t.Errorf("runInit() stderr = %q, want it to instruct the user to re-run the command", stderr.String())
+	}
+}
+
+func TestRunInit_MissingDeclaredPathSurfacesToStderr(t *testing.T) {
+	syncErr := errors.New("declared path(s) not found in repository: does-not-exist.md")
+	withInitStubs(t,
+		fakeCatalog(agentcatalog.AgentDefinition{
+			ID:          "vscode",
+			DisplayName: "GitHub Copilot",
+			Files:       []string{"does-not-exist.md"},
+		}),
+		func(*os.File) bool { return true },
+		func([]huh.Option[string]) (string, error) { return "vscode", nil },
+		func(context.Context, string, string, string, []string, []string, []string) error { return syncErr },
+		fakeGetwd("/tmp/current-dir"),
+	)
+
+	var stdout, stderr bytes.Buffer
+	err := runInit(context.Background(), &stdout, &stderr, "")
+
+	if !errors.Is(err, syncErr) {
+		t.Errorf("runInit() error = %v, want it to wrap %v", err, syncErr)
+	}
+	if !strings.Contains(stderr.String(), "does-not-exist.md") {
+		t.Errorf("runInit() stderr = %q, want it to name the missing declared path", stderr.String())
+	}
+	if strings.Contains(stdout.String(), "Files written") {
+		t.Errorf("runInit() stdout = %q, want no success confirmation when a declared path is missing", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Re-run the command") {
+		t.Errorf("runInit() stderr = %q, want it to instruct the user to re-run the command", stderr.String())
+	}
+}
+
+func fakeCatalogWithManaged(managed agentcatalog.ManagedConfig, agents ...agentcatalog.AgentDefinition) func() (*agentcatalog.AgentCatalog, error) {
+	return func() (*agentcatalog.AgentCatalog, error) {
+		return &agentcatalog.AgentCatalog{
+			Agents: agents,
+			Git: agentcatalog.GitConfig{
+				Repository: "https://example.com/example/repo.git",
+				Ref:        "abc123",
+				Managed:    managed,
+			},
+		}, nil
+	}
+}
+
+func TestRunInit_ManagedFilesAndFoldersAppliedRegardlessOfSelectedAgent(t *testing.T) {
+	managed := agentcatalog.ManagedConfig{
+		Files:   []string{"shared.md"},
+		Folders: []string{".highway"},
+	}
+	agents := []agentcatalog.AgentDefinition{
+		{ID: "vscode", DisplayName: "GitHub Copilot", Files: []string{"vscode-only.md"}, Folders: []string{"vscode-folder"}},
+		{ID: "cursor", DisplayName: "Cursor", Files: []string{"cursor-only.md"}, Folders: []string{"cursor-folder"}},
+	}
+
+	runAndCapture := func(selectedID string) (files, folders, managedFolders []string) {
+		withInitStubs(t,
+			fakeCatalogWithManaged(managed, agents...),
+			func(*os.File) bool { return true },
+			func([]huh.Option[string]) (string, error) { return selectedID, nil },
+			func(_ context.Context, _, _, _ string, f, d, m []string) error {
+				files, folders, managedFolders = f, d, m
+				return nil
+			},
+			fakeGetwd("/tmp/current-dir"),
+		)
+		var stdout, stderr bytes.Buffer
+		if err := runInit(context.Background(), &stdout, &stderr, ""); err != nil {
+			t.Fatalf("runInit() unexpected error: %v", err)
+		}
+		return files, folders, managedFolders
+	}
+
+	vscodeFiles, vscodeFolders, vscodeManagedFolders := runAndCapture("vscode")
+	if !slices.Equal(vscodeFiles, []string{"vscode-only.md", "shared.md"}) {
+		t.Errorf("runInit() (vscode) files = %v, want [vscode-only.md shared.md]", vscodeFiles)
+	}
+	if !slices.Equal(vscodeFolders, []string{"vscode-folder"}) {
+		t.Errorf("runInit() (vscode) folders = %v, want [vscode-folder]", vscodeFolders)
+	}
+	if !slices.Equal(vscodeManagedFolders, []string{".highway"}) {
+		t.Errorf("runInit() (vscode) managedFolders = %v, want [.highway]", vscodeManagedFolders)
+	}
+
+	cursorFiles, cursorFolders, cursorManagedFolders := runAndCapture("cursor")
+	if !slices.Equal(cursorFiles, []string{"cursor-only.md", "shared.md"}) {
+		t.Errorf("runInit() (cursor) files = %v, want [cursor-only.md shared.md]", cursorFiles)
+	}
+	if !slices.Equal(cursorFolders, []string{"cursor-folder"}) {
+		t.Errorf("runInit() (cursor) folders = %v, want [cursor-folder]", cursorFolders)
+	}
+	if !slices.Equal(cursorManagedFolders, []string{".highway"}) {
+		t.Errorf("runInit() (cursor) managedFolders = %v, want [.highway]", cursorManagedFolders)
+	}
+}
+
+func TestRunInit_ManagedFilesUnionedWithAgentFilesNoDuplicateWrites(t *testing.T) {
+	var gotFiles []string
+	withInitStubs(t,
+		fakeCatalogWithManaged(
+			agentcatalog.ManagedConfig{Files: []string{"shared.md"}},
+			agentcatalog.AgentDefinition{ID: "vscode", DisplayName: "GitHub Copilot", Files: []string{"shared.md", "agent-only.md"}},
+		),
+		func(*os.File) bool { return true },
+		func([]huh.Option[string]) (string, error) { return "vscode", nil },
+		func(_ context.Context, _, _, _ string, files, _, _ []string) error {
+			gotFiles = files
+			return nil
+		},
+		fakeGetwd("/tmp/current-dir"),
+	)
+
+	var stdout, stderr bytes.Buffer
+	if err := runInit(context.Background(), &stdout, &stderr, ""); err != nil {
+		t.Fatalf("runInit() unexpected error: %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("runInit() stderr = %q, want empty", stderr.String())
+	}
+	if !slices.Contains(gotFiles, "shared.md") {
+		t.Errorf("runInit() files = %v, want it to contain the overlapping managed file shared.md", gotFiles)
+	}
+}
+
+func TestRunInit_NoManagedConfigStillSucceeds(t *testing.T) {
+	withInitStubs(t,
+		fakeCatalog(agentcatalog.AgentDefinition{ID: "vscode", DisplayName: "GitHub Copilot", Files: []string{"agent-only.md"}}),
+		func(*os.File) bool { return true },
+		func([]huh.Option[string]) (string, error) { return "vscode", nil },
+		noopSync,
+		fakeGetwd("/tmp/current-dir"),
+	)
+
+	var stdout, stderr bytes.Buffer
+	err := runInit(context.Background(), &stdout, &stderr, "")
+
+	if err != nil {
+		t.Fatalf("runInit() unexpected error: %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("runInit() stderr = %q, want empty on success", stderr.String())
 	}
 }

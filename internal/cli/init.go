@@ -42,7 +42,9 @@ var selectAgent = func(options []huh.Option[string]) (string, error) {
 }
 
 // syncRepo is overridable in tests; clones the configured repository/ref and
-// writes its files to destination.
+// writes its files to destination, scoped to the selected agent's declared
+// files/folders plus the git configuration's managed files/folders, which
+// apply regardless of the selected agent (see reposync.Sync).
 var syncRepo = reposync.Sync
 
 // getwd is overridable in tests; reports the current working directory.
@@ -95,12 +97,20 @@ func runInit(ctx context.Context, stdout, stderr io.Writer, path string) error {
 	}
 
 	displayName := selectedID
+	var files, folders []string
 	for _, agent := range catalog.Agents {
 		if agent.ID == selectedID {
 			displayName = agent.DisplayName
+			files = agent.Files
+			folders = agent.Folders
 			break
 		}
 	}
+
+	// Managed files apply on every init run regardless of the selected agent (FR-002);
+	// unioning them with the agent's own declared files reuses the existing write path
+	// unchanged (FR-005). Cloning avoids mutating the catalog's own agent.Files slice.
+	files = append(append([]string{}, files...), catalog.Git.Managed.Files...)
 
 	fmt.Fprintf(stdout, "Selected agent: %s\n", displayName)
 
@@ -113,11 +123,12 @@ func runInit(ctx context.Context, stdout, stderr io.Writer, path string) error {
 		}
 	}
 
-	if err := syncRepo(ctx, catalog.Git.Repository, catalog.Git.Ref, destination); err != nil {
+	if err := syncRepo(ctx, catalog.Git.Repository, catalog.Git.Ref, destination, files, folders, catalog.Git.Managed.Folders); err != nil {
 		if errors.Is(err, context.Canceled) {
 			err = fmt.Errorf("cancelled before files were written: %w", err)
 		}
 		fmt.Fprintf(stderr, "Error: %v\n", err)
+		fmt.Fprintln(stderr, "Re-run the command to retry.")
 		return err
 	}
 
