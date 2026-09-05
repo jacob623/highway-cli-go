@@ -1,3 +1,6 @@
+git:
+  repository: https://github.com/jacob623/highway-skills.git
+  ref: 309b50d309478e3b2417120396a8fc9179c99a30
 agents:
   - id: vscode
     display_name: GitHub Copilot
