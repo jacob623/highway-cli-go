@@ -1,0 +1,7 @@
+agents:
+  - id: vscode
+    display_name: GitHub Copilot
+  - id: claude-code
+    display_name: Claude Code
+  - id: cursor
+    display_name: Cursor
