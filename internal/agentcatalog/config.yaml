@@ -1,10 +1,19 @@
 git:
   repository: https://github.com/jacob623/highway-skills.git
   ref: 309b50d309478e3b2417120396a8fc9179c99a30
+  managed:
+    folders:
+      - .highway
 agents:
   - id: vscode
     display_name: GitHub Copilot
+    folders:
+      - .github/skills
   - id: claude-code
     display_name: Claude Code
+    folders:
+      - .claude/skills
   - id: cursor
     display_name: Cursor
+    folders:
+      - .cursor/skills
