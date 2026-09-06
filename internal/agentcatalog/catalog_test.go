@@ -257,6 +257,117 @@ agents:
 	}
 }
 
+func TestLoadFS_SeededConfigParsesFromYAML(t *testing.T) {
+	fsys := fstest.MapFS{
+		"config.yaml": &fstest.MapFile{Data: []byte(`git:
+  repository: https://example.com/example/repo.git
+  ref: abc123
+  seeded:
+    files:
+      - architecture.yaml
+    folders:
+      - custom
+agents:
+  - id: vscode
+    display_name: GitHub Copilot
+`)},
+	}
+
+	got, err := LoadFS(fsys, "config.yaml")
+	if err != nil {
+		t.Fatalf("LoadFS() unexpected error: %v", err)
+	}
+
+	wantFiles := []string{"architecture.yaml"}
+	wantFolders := []string{"custom"}
+	if len(got.Git.Seeded.Files) != len(wantFiles) || got.Git.Seeded.Files[0] != wantFiles[0] {
+		t.Errorf("LoadFS() Git.Seeded.Files = %v, want %v", got.Git.Seeded.Files, wantFiles)
+	}
+	if len(got.Git.Seeded.Folders) != len(wantFolders) || got.Git.Seeded.Folders[0] != wantFolders[0] {
+		t.Errorf("LoadFS() Git.Seeded.Folders = %v, want %v", got.Git.Seeded.Folders, wantFolders)
+	}
+}
+
+func TestLoadFS_AbsentSeededConfigIsBackwardCompatible(t *testing.T) {
+	fsys := fstest.MapFS{
+		"config.yaml": &fstest.MapFile{Data: []byte(`git:
+  repository: https://example.com/example/repo.git
+  ref: abc123
+agents:
+  - id: vscode
+    display_name: GitHub Copilot
+`)},
+	}
+
+	got, err := LoadFS(fsys, "config.yaml")
+	if err != nil {
+		t.Fatalf("LoadFS() unexpected error: %v", err)
+	}
+	if len(got.Git.Seeded.Files) != 0 || len(got.Git.Seeded.Folders) != 0 {
+		t.Errorf("LoadFS() Git.Seeded = %+v, want empty", got.Git.Seeded)
+	}
+}
+
+func TestLoadFS_InvalidSeededPathFails(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			name: "empty seeded file entry",
+			content: `git:
+  repository: https://example.com/example/repo.git
+  ref: abc123
+  seeded:
+    files:
+      - ""
+agents:
+  - id: vscode
+    display_name: GitHub Copilot
+`,
+		},
+		{
+			name: "absolute seeded folder entry",
+			content: `git:
+  repository: https://example.com/example/repo.git
+  ref: abc123
+  seeded:
+    folders:
+      - /etc/passwd
+agents:
+  - id: vscode
+    display_name: GitHub Copilot
+`,
+		},
+		{
+			name: "path-traversing seeded file entry",
+			content: `git:
+  repository: https://example.com/example/repo.git
+  ref: abc123
+  seeded:
+    files:
+      - ../outside-repo.md
+agents:
+  - id: vscode
+    display_name: GitHub Copilot
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fsys := fstest.MapFS{
+				"config.yaml": &fstest.MapFile{Data: []byte(tt.content)},
+			}
+
+			_, err := LoadFS(fsys, "config.yaml")
+			if !errors.Is(err, ErrInvalidDeclaredPath) {
+				t.Errorf("LoadFS() error = %v, want it to wrap ErrInvalidDeclaredPath", err)
+			}
+		})
+	}
+}
+
 func TestLoadFS_InvalidDeclaredPath(t *testing.T) {
 	tests := []struct {
 		name    string
