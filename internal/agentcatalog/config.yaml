@@ -1,9 +1,14 @@
 git:
   repository: https://github.com/jacob623/highway-skills.git
-  ref: 309b50d309478e3b2417120396a8fc9179c99a30
+  ref: 0790d540ee74ea879df286213f90e769cbf6787a
   managed:
     folders:
       - .highway
+  seeded:
+    folders:
+      - custom
+    files:
+      - architecture.yaml
 agents:
   - id: vscode
     display_name: GitHub Copilot

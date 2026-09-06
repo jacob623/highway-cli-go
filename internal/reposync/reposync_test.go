@@ -57,7 +57,7 @@ func TestSync_Success(t *testing.T) {
 	})
 	dest := t.TempDir()
 
-	err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md"}, []string{"nested"}, nil)
+	err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md"}, []string{"nested"}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestSync_OverwritesCollidingFilesOnly(t *testing.T) {
 		t.Fatalf("WriteFile(untouched.txt) error: %v", err)
 	}
 
-	if err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md"}, nil, nil); err != nil {
+	if err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md"}, nil, nil, nil, nil); err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
 
@@ -121,7 +121,7 @@ func TestSync_InvalidRepository(t *testing.T) {
 	dest := t.TempDir()
 	before, _ := os.ReadDir(dest)
 
-	err := Sync(context.Background(), filepath.Join(t.TempDir(), "does-not-exist"), "abc123", dest, nil, nil, nil)
+	err := Sync(context.Background(), filepath.Join(t.TempDir(), "does-not-exist"), "abc123", dest, nil, nil, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Sync() expected an error for an invalid repository, got nil")
 	}
@@ -136,7 +136,7 @@ func TestSync_InvalidRef(t *testing.T) {
 	repoPath, _ := newFixtureRepo(t, map[string]string{"README.md": "hello\n"})
 	dest := t.TempDir()
 
-	err := Sync(context.Background(), repoPath, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", dest, nil, nil, nil)
+	err := Sync(context.Background(), repoPath, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", dest, nil, nil, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Sync() expected an error for a nonexistent commit ref, got nil")
 	}
@@ -154,7 +154,7 @@ func TestSync_FiltersToDeclaredFiles(t *testing.T) {
 	})
 	dest := t.TempDir()
 
-	if err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md"}, nil, nil); err != nil {
+	if err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md"}, nil, nil, nil, nil); err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
 
@@ -175,7 +175,7 @@ func TestSync_FiltersToDeclaredFolders(t *testing.T) {
 	})
 	dest := t.TempDir()
 
-	if err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil); err != nil {
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil, nil, nil); err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
 
@@ -201,7 +201,7 @@ func TestSync_FiltersUnionOfFilesAndFolders(t *testing.T) {
 	})
 	dest := t.TempDir()
 
-	err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md"}, []string{"skills"}, nil)
+	err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md"}, []string{"skills"}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
@@ -227,6 +227,7 @@ func TestSync_DuplicateAndOverlappingEntriesWriteOnce(t *testing.T) {
 		[]string{"skills/a.md", "skills/a.md"}, // duplicate file entry
 		[]string{"skills", "skills"},           // duplicate + overlapping folder entry
 		nil,
+		nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
@@ -248,7 +249,7 @@ func TestSync_NoDeclaredListsWritesNothing(t *testing.T) {
 	})
 	dest := t.TempDir()
 
-	if err := Sync(context.Background(), repoPath, ref, dest, nil, nil, nil); err != nil {
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, nil, nil, nil, nil); err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
 
@@ -265,7 +266,7 @@ func TestSync_MissingDeclaredFileFails(t *testing.T) {
 	repoPath, ref := newFixtureRepo(t, map[string]string{"README.md": "hello\n"})
 	dest := t.TempDir()
 
-	err := Sync(context.Background(), repoPath, ref, dest, []string{"does-not-exist.md"}, nil, nil)
+	err := Sync(context.Background(), repoPath, ref, dest, []string{"does-not-exist.md"}, nil, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Sync() expected an error for a missing declared file, got nil")
 	}
@@ -283,7 +284,7 @@ func TestSync_MissingDeclaredFolderFails(t *testing.T) {
 	repoPath, ref := newFixtureRepo(t, map[string]string{"README.md": "hello\n"})
 	dest := t.TempDir()
 
-	err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"does-not-exist"}, nil)
+	err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"does-not-exist"}, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Sync() expected an error for a missing declared folder, got nil")
 	}
@@ -305,6 +306,7 @@ func TestSync_MultipleMissingPathsNamedInError(t *testing.T) {
 		[]string{"missing-file.md"},
 		[]string{"missing-folder"},
 		nil,
+		nil, nil,
 	)
 	if err == nil {
 		t.Fatal("Sync() expected an error for missing declared paths, got nil")
@@ -327,7 +329,7 @@ func TestSync_MissingPathLeavesDestinationUntouched(t *testing.T) {
 		t.Fatalf("WriteFile(existing.txt) error: %v", err)
 	}
 
-	err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md", "missing.md"}, []string{"skills"}, nil)
+	err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md", "missing.md"}, []string{"skills"}, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Sync() expected an error for a missing declared path, got nil")
 	}
@@ -365,7 +367,7 @@ func TestSync_MergePreservesDestinationFileNotProvidedByRepoFolder(t *testing.T)
 		t.Fatalf("WriteFile(speckit-specify/file.md) error: %v", err)
 	}
 
-	if err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil); err != nil {
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil, nil, nil); err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
 
@@ -398,7 +400,7 @@ func TestSync_MergeLeavesUnrelatedDestinationFileUntouched(t *testing.T) {
 		t.Fatalf("WriteFile(other/unrelated.md) error: %v", err)
 	}
 
-	if err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil); err != nil {
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil, nil, nil); err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
 
@@ -429,7 +431,7 @@ func TestSync_MergePreservesNestedSiblingSubfoldersAndFiles(t *testing.T) {
 		t.Fatalf("WriteFile(b/existing.md) error: %v", err)
 	}
 
-	if err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil); err != nil {
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil, nil, nil); err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
 
@@ -467,7 +469,7 @@ func TestSync_TypeConflictFileWhereDestinationHasDirectory(t *testing.T) {
 		t.Fatalf("MkdirAll() error: %v", err)
 	}
 
-	err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil)
+	err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Sync() expected an error for a file/directory type conflict, got nil")
 	}
@@ -496,7 +498,7 @@ func TestSync_TypeConflictDirectoryWhereDestinationHasFile(t *testing.T) {
 		t.Fatalf("WriteFile(skills/conflict) error: %v", err)
 	}
 
-	err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil)
+	err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Sync() expected an error for a directory/file type conflict, got nil")
 	}
@@ -519,7 +521,7 @@ func TestSync_FailedRunDoesNotRevertFilesFromEarlierSuccessfulRun(t *testing.T) 
 	})
 	dest := t.TempDir()
 
-	if err := Sync(context.Background(), firstRepoPath, firstRef, dest, nil, []string{"skills"}, nil); err != nil {
+	if err := Sync(context.Background(), firstRepoPath, firstRef, dest, nil, []string{"skills"}, nil, nil, nil); err != nil {
 		t.Fatalf("Sync() first run unexpected error: %v", err)
 	}
 	if _, err := os.ReadFile(filepath.Join(dest, "skills", "keep", "a.md")); err != nil {
@@ -534,7 +536,7 @@ func TestSync_FailedRunDoesNotRevertFilesFromEarlierSuccessfulRun(t *testing.T) 
 		t.Fatalf("MkdirAll() error: %v", err)
 	}
 
-	err := Sync(context.Background(), secondRepoPath, secondRef, dest, nil, []string{"skills"}, nil)
+	err := Sync(context.Background(), secondRepoPath, secondRef, dest, nil, []string{"skills"}, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Sync() second run expected an error for the type conflict, got nil")
 	}
@@ -563,7 +565,7 @@ func TestSync_ManagedFolderPrunesStaleDestinationFile(t *testing.T) {
 		t.Fatalf("WriteFile(.highway/keep.md) error: %v", err)
 	}
 
-	if err := Sync(context.Background(), repoPath, ref, dest, nil, nil, []string{".highway"}); err != nil {
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, nil, []string{".highway"}, nil, nil); err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
 
@@ -598,7 +600,7 @@ func TestSync_ManagedFolderMirrorsRecursively(t *testing.T) {
 		t.Fatalf("WriteFile(.highway/other/stale2.md) error: %v", err)
 	}
 
-	if err := Sync(context.Background(), repoPath, ref, dest, nil, nil, []string{".highway"}); err != nil {
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, nil, []string{".highway"}, nil, nil); err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
 
@@ -628,7 +630,7 @@ func TestSync_ManagedFolderRemovedEntirelyWhenRepoProvidesNoFiles(t *testing.T) 
 		t.Fatalf("WriteFile(.highway/sub/b.md) error: %v", err)
 	}
 
-	if err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md"}, nil, []string{".highway"}); err != nil {
+	if err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md"}, nil, []string{".highway"}, nil, nil); err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
 
@@ -652,7 +654,7 @@ func TestSync_ManagedFolderDoesNotAffectDeclaredFolderPruning(t *testing.T) {
 		t.Fatalf("WriteFile(skills/stale.md) error: %v", err)
 	}
 
-	if err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil); err != nil {
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, []string{"skills"}, nil, nil, nil); err != nil {
 		t.Fatalf("Sync() unexpected error: %v", err)
 	}
 
@@ -674,7 +676,7 @@ func TestSync_ManagedFolderTypeConflictFileWhereDestinationHasDirectory(t *testi
 		t.Fatalf("MkdirAll() error: %v", err)
 	}
 
-	err := Sync(context.Background(), repoPath, ref, dest, nil, nil, []string{".highway"})
+	err := Sync(context.Background(), repoPath, ref, dest, nil, nil, []string{".highway"}, nil, nil)
 	if err == nil {
 		t.Fatal("Sync() expected an error for a file/directory type conflict, got nil")
 	}
@@ -703,7 +705,7 @@ func TestSync_ManagedFolderTypeConflictDirectoryWhereDestinationHasFile(t *testi
 		t.Fatalf("WriteFile(.highway/conflict) error: %v", err)
 	}
 
-	err := Sync(context.Background(), repoPath, ref, dest, nil, nil, []string{".highway"})
+	err := Sync(context.Background(), repoPath, ref, dest, nil, nil, []string{".highway"}, nil, nil)
 	if err == nil {
 		t.Fatal("Sync() expected an error for a directory/file type conflict, got nil")
 	}
@@ -726,7 +728,7 @@ func TestSync_ManagedFolderMatchingZeroFilesIsNotAnError(t *testing.T) {
 	})
 	dest := t.TempDir()
 
-	err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md"}, nil, []string{".highway"})
+	err := Sync(context.Background(), repoPath, ref, dest, []string{"README.md"}, nil, []string{".highway"}, nil, nil)
 	if err != nil {
 		t.Fatalf("Sync() unexpected error: %v, want a managed folder matching zero files to succeed", err)
 	}
@@ -749,12 +751,224 @@ func TestSync_ManagedFolderWriteFailureLeavesPruningUnattempted(t *testing.T) {
 		t.Fatalf("WriteFile(.highway/stale.md) error: %v", err)
 	}
 
-	err := Sync(context.Background(), repoPath, ref, dest, nil, nil, []string{".highway"})
+	err := Sync(context.Background(), repoPath, ref, dest, nil, nil, []string{".highway"}, nil, nil)
 	if err == nil {
 		t.Fatal("Sync() expected an error for a type conflict, got nil")
 	}
 
 	if _, statErr := os.Stat(filepath.Join(dest, ".highway", "stale.md")); statErr != nil {
 		t.Errorf("Stat(.highway/stale.md) error: %v, want it left in place because pruning must not run after a write failure", statErr)
+	}
+}
+
+func TestSync_SeededFileCreatedWhenDestinationEmpty(t *testing.T) {
+	repoPath, ref := newFixtureRepo(t, map[string]string{
+		"architecture.yaml": "seed content\n",
+	})
+	dest := t.TempDir()
+
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, nil, nil, []string{"architecture.yaml"}, nil); err != nil {
+		t.Fatalf("Sync() unexpected error: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dest, "architecture.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(architecture.yaml) error: %v, want the seeded file created", err)
+	}
+	if string(got) != "seed content\n" {
+		t.Errorf("architecture.yaml content = %q, want %q", got, "seed content\n")
+	}
+}
+
+func TestSync_SeededFolderFilesCreatedRecursively(t *testing.T) {
+	repoPath, ref := newFixtureRepo(t, map[string]string{
+		"custom/a.md":     "seed a\n",
+		"custom/sub/b.md": "seed b\n",
+	})
+	dest := t.TempDir()
+
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, nil, nil, nil, []string{"custom"}); err != nil {
+		t.Fatalf("Sync() unexpected error: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dest, "custom", "a.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(custom/a.md) error: %v, want it created", err)
+	}
+	if string(got) != "seed a\n" {
+		t.Errorf("custom/a.md content = %q, want %q", got, "seed a\n")
+	}
+
+	gotSub, err := os.ReadFile(filepath.Join(dest, "custom", "sub", "b.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(custom/sub/b.md) error: %v, want it created recursively", err)
+	}
+	if string(gotSub) != "seed b\n" {
+		t.Errorf("custom/sub/b.md content = %q, want %q", gotSub, "seed b\n")
+	}
+}
+
+func TestSync_SeededMissingDeclaredPathFails(t *testing.T) {
+	repoPath, ref := newFixtureRepo(t, map[string]string{"README.md": "hello\n"})
+	dest := t.TempDir()
+
+	err := Sync(context.Background(), repoPath, ref, dest, nil, nil, nil, []string{"does-not-exist.yaml"}, nil)
+	if err == nil {
+		t.Fatal("Sync() expected an error for a missing seeded file, got nil")
+	}
+	if !strings.Contains(err.Error(), "does-not-exist.yaml") {
+		t.Errorf("Sync() error = %q, want it to name the missing seeded path", err)
+	}
+
+	entries, _ := os.ReadDir(dest)
+	if len(entries) != 0 {
+		t.Errorf("Sync() wrote files to destination on missing seeded path, want none written")
+	}
+}
+
+func TestSync_SeededWriteFailureDoesNotRollbackAlreadyWrittenSeedFiles(t *testing.T) {
+	firstRepoPath, firstRef := newFixtureRepo(t, map[string]string{
+		"custom/keep.md": "seed content\n",
+	})
+	dest := t.TempDir()
+
+	if err := Sync(context.Background(), firstRepoPath, firstRef, dest, nil, nil, nil, nil, []string{"custom"}); err != nil {
+		t.Fatalf("Sync() first run unexpected error: %v", err)
+	}
+	if _, err := os.ReadFile(filepath.Join(dest, "custom", "keep.md")); err != nil {
+		t.Fatalf("ReadFile(custom/keep.md) error after first run: %v", err)
+	}
+
+	// A later run declares an additional seeded path whose destination parent is
+	// occupied by a plain file rather than a directory, so checking its existence
+	// fails outright (an intermediate path segment conflict, not a simple
+	// already-exists skip). This must not disturb custom/keep.md from the first run.
+	secondRepoPath, secondRef := newFixtureRepo(t, map[string]string{
+		"custom/keep.md":         "seed content\n",
+		"custom/blocked/deep.md": "unreachable\n",
+	})
+	if err := os.WriteFile(filepath.Join(dest, "custom", "blocked"), []byte("occupies the parent path\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(custom/blocked) error: %v", err)
+	}
+
+	err := Sync(context.Background(), secondRepoPath, secondRef, dest, nil, nil, nil, nil, []string{"custom"})
+	if err == nil {
+		t.Fatal("Sync() second run expected an error for the intermediate path conflict, got nil")
+	}
+
+	got, readErr := os.ReadFile(filepath.Join(dest, "custom", "keep.md"))
+	if readErr != nil {
+		t.Fatalf("ReadFile(custom/keep.md) error after failed second run: %v, want it left in place (already-created seed files are not rolled back)", readErr)
+	}
+	if string(got) != "seed content\n" {
+		t.Errorf("custom/keep.md content = %q, want unchanged %q", got, "seed content\n")
+	}
+}
+
+func TestSync_SeededFileWithExistingContentLeftUnchanged(t *testing.T) {
+	repoPath, ref := newFixtureRepo(t, map[string]string{
+		"architecture.yaml": "upstream content\n",
+	})
+	dest := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dest, "architecture.yaml"), []byte("customized content\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(architecture.yaml) error: %v", err)
+	}
+
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, nil, nil, []string{"architecture.yaml"}, nil); err != nil {
+		t.Fatalf("Sync() unexpected error: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dest, "architecture.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(architecture.yaml) error: %v", err)
+	}
+	if string(got) != "customized content\n" {
+		t.Errorf("architecture.yaml content = %q, want unchanged customization %q", got, "customized content\n")
+	}
+}
+
+func TestSync_SeededFolderExistingFileLeftUnchangedEvenWhenRepoContentDiffers(t *testing.T) {
+	repoPath, ref := newFixtureRepo(t, map[string]string{
+		"custom/a.md": "upstream content\n",
+	})
+	dest := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dest, "custom"), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dest, "custom", "a.md"), []byte("customized content\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(custom/a.md) error: %v", err)
+	}
+
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, nil, nil, nil, []string{"custom"}); err != nil {
+		t.Fatalf("Sync() unexpected error: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dest, "custom", "a.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(custom/a.md) error: %v", err)
+	}
+	if string(got) != "customized content\n" {
+		t.Errorf("custom/a.md content = %q, want unchanged customization %q", got, "customized content\n")
+	}
+}
+
+func TestSync_SeededPathOccupiedByDirectoryIsSkippedNotError(t *testing.T) {
+	repoPath, ref := newFixtureRepo(t, map[string]string{
+		"architecture.yaml": "seed content\n",
+	})
+	dest := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dest, "architecture.yaml"), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error: %v", err)
+	}
+
+	if err := Sync(context.Background(), repoPath, ref, dest, nil, nil, nil, []string{"architecture.yaml"}, nil); err != nil {
+		t.Fatalf("Sync() unexpected error: %v, want a directory occupying a seeded path to be silently skipped", err)
+	}
+
+	info, statErr := os.Stat(filepath.Join(dest, "architecture.yaml"))
+	if statErr != nil {
+		t.Fatalf("Stat(architecture.yaml) error: %v, want the destination directory to still exist", statErr)
+	}
+	if !info.IsDir() {
+		t.Error("architecture.yaml is no longer a directory, want it left untouched")
+	}
+}
+
+func TestSync_SeededFolderAdoptsNewlyAddedFileWithoutDisturbingExisting(t *testing.T) {
+	firstRepoPath, firstRef := newFixtureRepo(t, map[string]string{
+		"custom/a.md": "seed a\n",
+	})
+	dest := t.TempDir()
+
+	if err := Sync(context.Background(), firstRepoPath, firstRef, dest, nil, nil, nil, nil, []string{"custom"}); err != nil {
+		t.Fatalf("Sync() first run unexpected error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dest, "custom", "a.md"), []byte("customized a\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(custom/a.md) error: %v", err)
+	}
+
+	secondRepoPath, secondRef := newFixtureRepo(t, map[string]string{
+		"custom/a.md": "seed a\n",
+		"custom/b.md": "seed b\n",
+	})
+
+	if err := Sync(context.Background(), secondRepoPath, secondRef, dest, nil, nil, nil, nil, []string{"custom"}); err != nil {
+		t.Fatalf("Sync() second run unexpected error: %v", err)
+	}
+
+	a, err := os.ReadFile(filepath.Join(dest, "custom", "a.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(custom/a.md) error: %v", err)
+	}
+	if string(a) != "customized a\n" {
+		t.Errorf("custom/a.md content = %q, want unchanged customization %q", a, "customized a\n")
+	}
+
+	b, err := os.ReadFile(filepath.Join(dest, "custom", "b.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(custom/b.md) error: %v, want the newly added seed file adopted", err)
+	}
+	if string(b) != "seed b\n" {
+		t.Errorf("custom/b.md content = %q, want %q", b, "seed b\n")
 	}
 }

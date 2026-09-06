@@ -19,7 +19,7 @@ func withInitStubs(
 	load func() (*agentcatalog.AgentCatalog, error),
 	terminal func(*os.File) bool,
 	sel func([]huh.Option[string]) (string, error),
-	sync func(context.Context, string, string, string, []string, []string, []string) error,
+	sync func(context.Context, string, string, string, []string, []string, []string, []string, []string) error,
 	wd func() (string, error),
 ) {
 	t.Helper()
@@ -53,7 +53,7 @@ func fakeCatalog(agents ...agentcatalog.AgentDefinition) func() (*agentcatalog.A
 	}
 }
 
-func noopSync(context.Context, string, string, string, []string, []string, []string) error {
+func noopSync(context.Context, string, string, string, []string, []string, []string, []string, []string) error {
 	return nil
 }
 
@@ -117,7 +117,7 @@ func TestRunInit_ExplicitDestinationPath(t *testing.T) {
 		fakeCatalog(agentcatalog.AgentDefinition{ID: "vscode", DisplayName: "GitHub Copilot"}),
 		func(*os.File) bool { return true },
 		func([]huh.Option[string]) (string, error) { return "vscode", nil },
-		func(_ context.Context, _, _, destination string, _, _, _ []string) error {
+		func(_ context.Context, _, _, destination string, _, _, _, _, _ []string) error {
 			gotDestination = destination
 			return nil
 		},
@@ -155,7 +155,7 @@ func TestRunInit_PassesSelectedAgentFilesAndFolders(t *testing.T) {
 		),
 		func(*os.File) bool { return true },
 		func([]huh.Option[string]) (string, error) { return "vscode", nil },
-		func(_ context.Context, _, _, _ string, files, folders, _ []string) error {
+		func(_ context.Context, _, _, _ string, files, folders, _, _, _ []string) error {
 			gotFiles = files
 			gotFolders = folders
 			return nil
@@ -225,7 +225,7 @@ func TestRunInit_SyncCancellation(t *testing.T) {
 		fakeCatalog(agentcatalog.AgentDefinition{ID: "vscode", DisplayName: "GitHub Copilot"}),
 		func(*os.File) bool { return true },
 		func([]huh.Option[string]) (string, error) { return "vscode", nil },
-		func(context.Context, string, string, string, []string, []string, []string) error {
+		func(context.Context, string, string, string, []string, []string, []string, []string, []string) error {
 			return context.Canceled
 		},
 		fakeGetwd("/tmp/current-dir"),
@@ -304,7 +304,9 @@ func TestRunInit_SyncError(t *testing.T) {
 		fakeCatalog(agentcatalog.AgentDefinition{ID: "vscode", DisplayName: "GitHub Copilot"}),
 		func(*os.File) bool { return true },
 		func([]huh.Option[string]) (string, error) { return "vscode", nil },
-		func(context.Context, string, string, string, []string, []string, []string) error { return syncErr },
+		func(context.Context, string, string, string, []string, []string, []string, []string, []string) error {
+			return syncErr
+		},
 		fakeGetwd("/tmp/current-dir"),
 	)
 
@@ -335,7 +337,9 @@ func TestRunInit_MissingDeclaredPathSurfacesToStderr(t *testing.T) {
 		}),
 		func(*os.File) bool { return true },
 		func([]huh.Option[string]) (string, error) { return "vscode", nil },
-		func(context.Context, string, string, string, []string, []string, []string) error { return syncErr },
+		func(context.Context, string, string, string, []string, []string, []string, []string, []string) error {
+			return syncErr
+		},
 		fakeGetwd("/tmp/current-dir"),
 	)
 
@@ -384,7 +388,7 @@ func TestRunInit_ManagedFilesAndFoldersAppliedRegardlessOfSelectedAgent(t *testi
 			fakeCatalogWithManaged(managed, agents...),
 			func(*os.File) bool { return true },
 			func([]huh.Option[string]) (string, error) { return selectedID, nil },
-			func(_ context.Context, _, _, _ string, f, d, m []string) error {
+			func(_ context.Context, _, _, _ string, f, d, m, _, _ []string) error {
 				files, folders, managedFolders = f, d, m
 				return nil
 			},
@@ -429,7 +433,7 @@ func TestRunInit_ManagedFilesUnionedWithAgentFilesNoDuplicateWrites(t *testing.T
 		),
 		func(*os.File) bool { return true },
 		func([]huh.Option[string]) (string, error) { return "vscode", nil },
-		func(_ context.Context, _, _, _ string, files, _, _ []string) error {
+		func(_ context.Context, _, _, _ string, files, _, _, _, _ []string) error {
 			gotFiles = files
 			return nil
 		},
@@ -465,5 +469,75 @@ func TestRunInit_NoManagedConfigStillSucceeds(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Errorf("runInit() stderr = %q, want empty on success", stderr.String())
+	}
+}
+
+func fakeCatalogWithSeeded(seeded agentcatalog.SeededConfig, agents ...agentcatalog.AgentDefinition) func() (*agentcatalog.AgentCatalog, error) {
+	return func() (*agentcatalog.AgentCatalog, error) {
+		return &agentcatalog.AgentCatalog{
+			Agents: agents,
+			Git: agentcatalog.GitConfig{
+				Repository: "https://example.com/example/repo.git",
+				Ref:        "abc123",
+				Seeded:     seeded,
+			},
+		}, nil
+	}
+}
+
+func TestRunInit_SeededFilesAndFoldersAppliedRegardlessOfSelectedAgent(t *testing.T) {
+	seeded := agentcatalog.SeededConfig{
+		Files:   []string{"architecture.yaml"},
+		Folders: []string{"custom"},
+	}
+	agents := []agentcatalog.AgentDefinition{
+		{ID: "vscode", DisplayName: "GitHub Copilot", Files: []string{"vscode-only.md"}, Folders: []string{"vscode-folder"}},
+		{ID: "cursor", DisplayName: "Cursor", Files: []string{"cursor-only.md"}, Folders: []string{"cursor-folder"}},
+	}
+
+	runAndCapture := func(selectedID string) (files, folders, seededFiles, seededFolders []string) {
+		withInitStubs(t,
+			fakeCatalogWithSeeded(seeded, agents...),
+			func(*os.File) bool { return true },
+			func([]huh.Option[string]) (string, error) { return selectedID, nil },
+			func(_ context.Context, _, _, _ string, f, d, _, sf, sd []string) error {
+				files, folders, seededFiles, seededFolders = f, d, sf, sd
+				return nil
+			},
+			fakeGetwd("/tmp/current-dir"),
+		)
+		var stdout, stderr bytes.Buffer
+		if err := runInit(context.Background(), &stdout, &stderr, ""); err != nil {
+			t.Fatalf("runInit() unexpected error: %v", err)
+		}
+		return files, folders, seededFiles, seededFolders
+	}
+
+	vscodeFiles, vscodeFolders, vscodeSeededFiles, vscodeSeededFolders := runAndCapture("vscode")
+	if !slices.Equal(vscodeFiles, []string{"vscode-only.md"}) {
+		t.Errorf("runInit() (vscode) files = %v, want [vscode-only.md] (seeded files must not be unioned in)", vscodeFiles)
+	}
+	if !slices.Equal(vscodeFolders, []string{"vscode-folder"}) {
+		t.Errorf("runInit() (vscode) folders = %v, want [vscode-folder] (seeded folders must not be unioned in)", vscodeFolders)
+	}
+	if !slices.Equal(vscodeSeededFiles, []string{"architecture.yaml"}) {
+		t.Errorf("runInit() (vscode) seededFiles = %v, want [architecture.yaml]", vscodeSeededFiles)
+	}
+	if !slices.Equal(vscodeSeededFolders, []string{"custom"}) {
+		t.Errorf("runInit() (vscode) seededFolders = %v, want [custom]", vscodeSeededFolders)
+	}
+
+	cursorFiles, cursorFolders, cursorSeededFiles, cursorSeededFolders := runAndCapture("cursor")
+	if !slices.Equal(cursorFiles, []string{"cursor-only.md"}) {
+		t.Errorf("runInit() (cursor) files = %v, want [cursor-only.md] (seeded files must not be unioned in)", cursorFiles)
+	}
+	if !slices.Equal(cursorFolders, []string{"cursor-folder"}) {
+		t.Errorf("runInit() (cursor) folders = %v, want [cursor-folder] (seeded folders must not be unioned in)", cursorFolders)
+	}
+	if !slices.Equal(cursorSeededFiles, []string{"architecture.yaml"}) {
+		t.Errorf("runInit() (cursor) seededFiles = %v, want [architecture.yaml]", cursorSeededFiles)
+	}
+	if !slices.Equal(cursorSeededFolders, []string{"custom"}) {
+		t.Errorf("runInit() (cursor) seededFolders = %v, want [custom]", cursorSeededFolders)
 	}
 }

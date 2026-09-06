@@ -40,7 +40,15 @@ import (
 // match the retrieved repository: any destination file under a managed folder that the
 // repository does not provide is removed (FR-003). Pruning only runs after every write
 // in this call has already succeeded (FR-006).
-func Sync(ctx context.Context, repository, ref, destination string, declaredFiles, declaredFolders, managedFolders []string) error {
+//
+// seededFiles and seededFolders (feature 006) are additional paths applied regardless
+// of the selected agent, like managedFolders, but with the opposite write behavior:
+// each matching file is created only the first time nothing already exists at its exact
+// destination path (create-if-missing), and is never overwritten, removed, or reported
+// as a conflict on any later call. A seededFiles/seededFolders entry matching zero
+// retrieved files is a validation error, same as declaredFiles/declaredFolders (unlike
+// managedFolders), since seeded content has no legitimate "matches nothing" outcome.
+func Sync(ctx context.Context, repository, ref, destination string, declaredFiles, declaredFolders, managedFolders, seededFiles, seededFolders []string) error {
 	storer := memory.NewStorage()
 	worktreeFS := memfs.New()
 
@@ -67,7 +75,7 @@ func Sync(ctx context.Context, repository, ref, destination string, declaredFile
 		return err
 	}
 
-	if err := checkDeclaredPathsExist(collected, declaredFiles, declaredFolders); err != nil {
+	if err := checkDeclaredPathsExist(collected, append(append([]string{}, declaredFiles...), seededFiles...), append(append([]string{}, declaredFolders...), seededFolders...)); err != nil {
 		return err
 	}
 
@@ -75,6 +83,14 @@ func Sync(ctx context.Context, repository, ref, destination string, declaredFile
 	allFolders = append(allFolders, declaredFolders...)
 	allFolders = append(allFolders, managedFolders...)
 	writeSet := selectWriteSet(collected, declaredFiles, allFolders)
+
+	seedWriteSet, err := selectSeedWriteSet(destination, collected, seededFiles, seededFolders)
+	if err != nil {
+		return err
+	}
+	for relPath, data := range seedWriteSet {
+		writeSet[relPath] = data
+	}
 
 	if err := os.MkdirAll(destination, 0o755); err != nil {
 		return fmt.Errorf("create destination %s: %w", destination, err)
@@ -159,6 +175,29 @@ func selectWriteSet(collected map[string][]byte, declaredFiles, declaredFolders 
 		}
 	}
 	return result
+}
+
+// selectSeedWriteSet returns the subset of collected whose path exactly matches an
+// entry in seededFiles, or has an entry in seededFolders as a path-prefix, AND for
+// which nothing currently exists at the corresponding destination path. This is what
+// makes seeding create-if-missing rather than always-overwrite (FR-003, FR-004,
+// FR-005): a matching path that already exists at destination, of any type, is silently
+// excluded rather than written or reported as a conflict.
+func selectSeedWriteSet(destination string, collected map[string][]byte, seededFiles, seededFolders []string) (map[string][]byte, error) {
+	candidates := selectWriteSet(collected, seededFiles, seededFolders)
+
+	result := make(map[string][]byte, len(candidates))
+	for relPath, data := range candidates {
+		_, err := os.Lstat(filepath.Join(destination, relPath))
+		if err == nil {
+			continue
+		}
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("check existing seed path %s: %w", relPath, err)
+		}
+		result[relPath] = data
+	}
+	return result, nil
 }
 
 // collectFiles recursively reads every regular file under dir in fsys into

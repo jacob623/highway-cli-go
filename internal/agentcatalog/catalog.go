@@ -28,6 +28,7 @@ type GitConfig struct {
 	Repository string        `yaml:"repository"`
 	Ref        string        `yaml:"ref"`
 	Managed    ManagedConfig `yaml:"managed"`
+	Seeded     SeededConfig  `yaml:"seeded"`
 }
 
 // ManagedConfig is the set of files and folders that apply on every init run,
@@ -37,6 +38,17 @@ type GitConfig struct {
 // no longer provides. A zero-value ManagedConfig (both fields nil) is valid and means
 // no managed files/folders are declared.
 type ManagedConfig struct {
+	Files   []string `yaml:"files"`
+	Folders []string `yaml:"folders"`
+}
+
+// SeededConfig is the set of files and folders that are created at the destination on
+// every init run, independent of which agent is selected (feature 006), but only the
+// first time nothing already exists at their exact destination path. Unlike
+// ManagedConfig, seeded content is never overwritten or removed once it exists. A
+// zero-value SeededConfig (both fields nil) is valid and means no seeded files/folders
+// are declared.
+type SeededConfig struct {
 	Files   []string `yaml:"files"`
 	Folders []string `yaml:"folders"`
 }
@@ -88,6 +100,10 @@ func LoadFS(fsys fs.FS, name string) (*AgentCatalog, error) {
 	}
 
 	if err := validateManagedPaths(catalog.Git.Managed); err != nil {
+		return nil, err
+	}
+
+	if err := validateSeededPaths(catalog.Git.Seeded); err != nil {
 		return nil, err
 	}
 
@@ -145,6 +161,22 @@ func validateManagedPaths(managed ManagedConfig) error {
 	for _, p := range managed.Folders {
 		if !isValidDeclaredPath(p) {
 			return fmt.Errorf("%w: managed folder %q", ErrInvalidDeclaredPath, p)
+		}
+	}
+	return nil
+}
+
+// validateSeededPaths rejects an empty, absolute, or path-traversing (`..`) entry in
+// the git config's seeded Files/Folders lists (FR-001 of feature 006).
+func validateSeededPaths(seeded SeededConfig) error {
+	for _, p := range seeded.Files {
+		if !isValidDeclaredPath(p) {
+			return fmt.Errorf("%w: seeded file %q", ErrInvalidDeclaredPath, p)
+		}
+	}
+	for _, p := range seeded.Folders {
+		if !isValidDeclaredPath(p) {
+			return fmt.Errorf("%w: seeded folder %q", ErrInvalidDeclaredPath, p)
 		}
 	}
 	return nil

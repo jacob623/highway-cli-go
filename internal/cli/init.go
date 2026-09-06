@@ -43,8 +43,9 @@ var selectAgent = func(options []huh.Option[string]) (string, error) {
 
 // syncRepo is overridable in tests; clones the configured repository/ref and
 // writes its files to destination, scoped to the selected agent's declared
-// files/folders plus the git configuration's managed files/folders, which
-// apply regardless of the selected agent (see reposync.Sync).
+// files/folders plus the git configuration's managed files/folders (applied
+// regardless of the selected agent) and seeded files/folders (created only if
+// missing at destination, also regardless of the selected agent) — see reposync.Sync.
 var syncRepo = reposync.Sync
 
 // getwd is overridable in tests; reports the current working directory.
@@ -112,6 +113,12 @@ func runInit(ctx context.Context, stdout, stderr io.Writer, path string) error {
 	// unchanged (FR-005). Cloning avoids mutating the catalog's own agent.Files slice.
 	files = append(append([]string{}, files...), catalog.Git.Managed.Files...)
 
+	// Seeded files/folders apply regardless of selected agent too (FR-002), but stay on
+	// their own parameters since create-if-missing semantics differ from the
+	// always-overwrite files/folders/managedFolders above.
+	seededFiles := catalog.Git.Seeded.Files
+	seededFolders := catalog.Git.Seeded.Folders
+
 	fmt.Fprintf(stdout, "Selected agent: %s\n", displayName)
 
 	destination := path
@@ -123,7 +130,7 @@ func runInit(ctx context.Context, stdout, stderr io.Writer, path string) error {
 		}
 	}
 
-	if err := syncRepo(ctx, catalog.Git.Repository, catalog.Git.Ref, destination, files, folders, catalog.Git.Managed.Folders); err != nil {
+	if err := syncRepo(ctx, catalog.Git.Repository, catalog.Git.Ref, destination, files, folders, catalog.Git.Managed.Folders, seededFiles, seededFolders); err != nil {
 		if errors.Is(err, context.Canceled) {
 			err = fmt.Errorf("cancelled before files were written: %w", err)
 		}
